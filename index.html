@@ -707,4 +707,274 @@
 
       function showFeedback(msg, isWarn) {
         feedbackText.textContent = msg;
-        feedbackBanner.className = isWarn ? "feedback-banner is-warn" : "feedback-bann
+        feedbackBanner.className = isWarn ? "feedback-banner is-warn" : "feedback-banner";
+      }
+
+      function hideFeedback() {
+        feedbackBanner.className = "feedback-banner is-hidden";
+      }
+
+      function formatCurrency(val) {
+        return "£" + Number(val).toFixed(2);
+      }
+
+      function formatProfit(val) {
+        var num = Number(val);
+        if (num > 0) return "+£" + num.toFixed(2);
+        if (num < 0) return "-£" + Math.abs(num).toFixed(2);
+        return "£0.00";
+      }
+
+      function getProfitClass(val) {
+        if (val > 0) return "profit-pos";
+        if (val < 0) return "profit-neg";
+        return "profit-even";
+      }
+
+      function getSortValue(player, key) {
+        switch (key) {
+          case "rank": return player.rank;
+          case "winnings": return player.winnings;
+          case "profit": return player.profit;
+          case "bestRound": return player.bestPts;
+          case "correctPicks": return player.correctPicks;
+          case "losingPicks": return player.losingPicks;
+          case "apps": return player.apps;
+          case "wins": return player.wins;
+          default: return player.rank;
+        }
+      }
+
+      function applyScreenshotState() {
+        if (state.screenshot) {
+          document.body.classList.add("screenshot-mode");
+          screenshotToggleBtn.classList.add("btn-active");
+          screenshotToggleBtn.textContent = "Exit Screenshot";
+        } else {
+          document.body.classList.remove("screenshot-mode");
+          screenshotToggleBtn.classList.remove("btn-active");
+          screenshotToggleBtn.textContent = "Screenshot Mode";
+        }
+      }
+
+      function syncControlsFromState() {
+        searchInput.value = state.query;
+        sortSelect.value = state.sortBy;
+        sortDirBtn.textContent = state.sortDir === "asc" ? "ASC ↑" : "DESC ↓";
+
+        for (var i = 0; i < filterButtons.length; i++) {
+          var btn = filterButtons[i];
+          if (btn.getAttribute("data-filter") === state.filter) {
+            btn.classList.add("is-active");
+          } else {
+            btn.classList.remove("is-active");
+          }
+        }
+        applyScreenshotState();
+      }
+
+      function buildShareUrl() {
+        var params = new URLSearchParams();
+        if (state.query.trim() !== "") params.set("q", state.query.trim());
+        if (state.filter !== "all") params.set("filter", state.filter);
+        if (state.sortBy !== "rank") params.set("sort", state.sortBy);
+        if (state.sortDir !== "asc") params.set("dir", state.sortDir);
+        if (state.screenshot) params.set("shot", "1");
+
+        var base = window.location.href.split("#")[0];
+        var serialized = params.toString();
+        return serialized ? base + "#" + serialized : base;
+      }
+
+      function loadStateFromHash() {
+        try {
+          var hash = window.location.hash || "";
+          if (!hash || hash.length <= 1) return;
+          var params = new URLSearchParams(hash.slice(1));
+
+          if (params.has("q")) state.query = params.get("q") || "";
+          var f = params.get("filter");
+          if (f === "all" || f === "winners" || f === "non-winners") state.filter = f;
+
+          var s = params.get("sort");
+          var validSorts = ["rank", "winnings", "profit", "bestRound", "correctPicks", "losingPicks", "apps", "wins"];
+          if (s && validSorts.indexOf(s) !== -1) state.sortBy = s;
+
+          var d = params.get("dir");
+          if (d === "asc" || d === "desc") state.sortDir = d;
+
+          if (params.get("shot") === "1") state.screenshot = true;
+        } catch (err) {
+          // Ignore malformed hash
+        }
+      }
+
+      function renderTable() {
+        var q = state.query.trim().toLowerCase();
+
+        var filtered = PLAYERS.filter(function (p) {
+          if (state.filter === "winners" && p.wins <= 0) return false;
+          if (state.filter === "non-winners" && p.wins > 0) return false;
+          if (!q) return true;
+
+          var hay = [
+            p.name,
+            p.bestTeam,
+            p.round,
+            p.odds,
+            p.margin ? "margin " + p.margin : "",
+            p.bestPts + " pts"
+          ].join(" ").toLowerCase();
+
+          return hay.indexOf(q) !== -1;
+        });
+
+        var dirMultiplier = state.sortDir === "asc" ? 1 : -1;
+        filtered.sort(function (a, b) {
+          var va = getSortValue(a, state.sortBy);
+          var vb = getSortValue(b, state.sortBy);
+          if (va < vb) return -1 * dirMultiplier;
+          if (va > vb) return 1 * dirMultiplier;
+          return a.rank - b.rank;
+        });
+
+        standingsBody.innerHTML = "";
+
+        if (filtered.length === 0) {
+          emptyState.style.display = "block";
+          return;
+        }
+
+        emptyState.style.display = "none";
+
+        for (var i = 0; i < filtered.length; i++) {
+          var p = filtered[i];
+          var tr = document.createElement("tr");
+
+          var winBadgeHtml = p.wins > 0
+            ? '<span class="win-badge">' + p.wins + ' Win</span>'
+            : '';
+
+          var winningsClass = p.winnings > 0 ? "winnings-val" : "winnings-zero";
+          var marginHtml = p.margin
+            ? '<span class="meta-tag">Margin: ' + p.margin + '</span>'
+            : '';
+
+          tr.innerHTML =
+            '<td>' +
+              '<div class="player-cell">' +
+                '<span class="player-name">' + p.name + '</span>' +
+                winBadgeHtml +
+              '</div>' +
+            '</td>' +
+            '<td class="num">' + p.apps + '</td>' +
+            '<td class="num">' + p.wins + '</td>' +
+            '<td class="num"><span class="' + winningsClass + '">' + formatCurrency(p.winnings) + '</span></td>' +
+            '<td class="num"><span class="' + getProfitClass(p.profit) + '">' + formatProfit(p.profit) + '</span></td>' +
+            '<td class="num"><span class="correct-val">' + p.correctPicks + '</span></td>' +
+            '<td class="num"><span class="losing-val">' + p.losingPicks + '</span></td>' +
+            '<td>' +
+              '<div class="best-round-box">' +
+                '<div class="best-round-main">' + p.bestTeam + ' (' + p.bestPts.toFixed(2) + ' pts)</div>' +
+                '<div class="best-round-meta">' +
+                  '<span class="meta-tag">Odds: ' + p.odds + '</span>' +
+                  marginHtml +
+                  '<span class="meta-tag">' + p.round + '</span>' +
+                '</div>' +
+              '</div>' +
+            '</td>';
+
+          standingsBody.appendChild(tr);
+        }
+      }
+
+      searchInput.addEventListener("input", function () {
+        state.query = searchInput.value;
+        renderTable();
+      });
+
+      for (var i = 0; i < filterButtons.length; i++) {
+        filterButtons[i].addEventListener("click", function () {
+          state.filter = this.getAttribute("data-filter");
+          syncControlsFromState();
+          renderTable();
+        });
+      }
+
+      sortSelect.addEventListener("change", function () {
+        state.sortBy = sortSelect.value;
+        if (state.sortBy === "rank") {
+          state.sortDir = "asc";
+        } else {
+          state.sortDir = "desc";
+        }
+        syncControlsFromState();
+        renderTable();
+      });
+
+      sortDirBtn.addEventListener("click", function () {
+        state.sortDir = state.sortDir === "asc" ? "desc" : "asc";
+        syncControlsFromState();
+        renderTable();
+      });
+
+      resetBtn.addEventListener("click", function () {
+        state.query = "";
+        state.filter = "all";
+        state.sortBy = "rank";
+        state.sortDir = "asc";
+        state.screenshot = false;
+        try {
+          history.replaceState(null, "", window.location.href.split("#")[0]);
+        } catch (err) {
+          window.location.hash = "";
+        }
+        syncControlsFromState();
+        renderTable();
+        hideFeedback();
+      });
+
+      shareLinkBtn.addEventListener("click", function () {
+        var shareUrl = buildShareUrl();
+        try {
+          history.replaceState(null, "", shareUrl);
+        } catch (err) {
+          // Ignore if restricted
+        }
+
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          navigator.clipboard.writeText(shareUrl).then(function () {
+            showFeedback("Share link copied: " + shareUrl, false);
+          }).catch(function () {
+            showFeedback("Share link ready (copy manually): " + shareUrl, true);
+          });
+        } else {
+          showFeedback("Share link ready (copy manually): " + shareUrl, true);
+        }
+      });
+
+      screenshotToggleBtn.addEventListener("click", function () {
+        state.screenshot = !state.screenshot;
+        applyScreenshotState();
+      });
+
+      exitShotFab.addEventListener("click", function () {
+        state.screenshot = false;
+        applyScreenshotState();
+      });
+
+      feedbackDismissBtn.addEventListener("click", hideFeedback);
+
+      window.addEventListener("hashchange", function () {
+        loadStateFromHash();
+        syncControlsFromState();
+        renderTable();
+      });
+
+      loadStateFromHash();
+      syncControlsFromState();
+      renderTable();
+    })();
+  </script>
+</body>
+</html>
